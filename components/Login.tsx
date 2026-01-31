@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Lock, User, Eye, EyeOff, Loader2 } from 'lucide-react';
 
 interface LoginProps {
@@ -9,14 +9,30 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const DEMO_USERS = [
+  const USERS = [
     { username: 'admin', password: 'admin123', role: 'Admin' },
     { username: 'manager', password: 'manager123', role: 'Manager' },
     { username: 'staff', password: 'staff123', role: 'Staff' }
   ];
+
+  // Load saved credentials on mount
+  useEffect(() => {
+    const savedCredentials = localStorage.getItem('satyam_mall_saved_login');
+    if (savedCredentials) {
+      try {
+        const { username: savedUser, password: savedPass } = JSON.parse(savedCredentials);
+        setUsername(savedUser);
+        setPassword(savedPass);
+        setRememberMe(true);
+      } catch {
+        localStorage.removeItem('satyam_mall_saved_login');
+      }
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,11 +41,18 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     await new Promise(resolve => setTimeout(resolve, 400));
 
-    const user = DEMO_USERS.find(
+    const user = USERS.find(
       u => u.username.toLowerCase() === username.trim().toLowerCase() && u.password === password.trim()
     );
 
     if (user) {
+      // Save credentials if remember me is checked
+      if (rememberMe) {
+        localStorage.setItem('satyam_mall_saved_login', JSON.stringify({ username: user.username, password: password.trim() }));
+      } else {
+        localStorage.removeItem('satyam_mall_saved_login');
+      }
+
       localStorage.setItem('satyam_mall_user', JSON.stringify({
         username: user.username,
         role: user.role,
@@ -54,8 +77,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         </div>
 
         <div className="card p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Sign In</h2>
-          <p className="text-gray-500 text-sm mb-5">Enter your credentials</p>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Welcome Back</h2>
+          <p className="text-gray-500 text-sm mb-5">Sign in to your account</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -97,6 +120,19 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               </div>
             </div>
 
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="rememberMe"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 cursor-pointer"
+              />
+              <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-600 cursor-pointer select-none">
+                Remember me
+              </label>
+            </div>
+
             {error && (
               <div className="bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm border border-red-100">
                 {error}
@@ -108,19 +144,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
-
-          <div className="mt-5 pt-5 border-t border-gray-100">
-            <p className="text-xs text-gray-500 text-center mb-2">Demo Credentials</p>
-            <div className="grid grid-cols-3 gap-2 text-xs">
-              {DEMO_USERS.map(u => (
-                <div key={u.username} className="bg-gray-50 rounded-md p-2 text-center">
-                  <p className="font-medium text-gray-700">{u.username}</p>
-                  <p className="text-gray-400">{u.password}</p>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
+
+        <p className="text-center text-xs text-gray-400 mt-4">
+          Satyam Mall Inventory System
+        </p>
       </div>
     </div>
   );
