@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, TransactionType, FloorLocation } from '../types';
-import { Download, FileText, Filter, Calendar, ArrowUpRight, ArrowDownLeft, ExternalLink, MapPin, BarChart3, Building2, User, Package, TrendingUp, TrendingDown } from 'lucide-react';
+import { Download, FileText, Filter, Calendar, ArrowUpRight, ArrowDownLeft, ExternalLink, MapPin, BarChart3, Building2, User, Package, TrendingUp, TrendingDown, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -14,7 +14,9 @@ const Reports: React.FC<Props> = ({ transactions, currentUser }) => {
   const [filterLocation, setFilterLocation] = useState<string>('All');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [activeView, setActiveView] = useState<'transactions' | 'floorwise'>('transactions');
+  const [activeView, setActiveView] = useState<'transactions' | 'floorwise' | 'itemwise'>('transactions');
+  const [itemSearch, setItemSearch] = useState('');
+  const [expandedItem, setExpandedItem] = useState<string | null>(null);
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
@@ -98,6 +100,75 @@ const Reports: React.FC<Props> = ({ transactions, currentUser }) => {
 
     return Object.values(floorMap).sort((a, b) => b.issued + b.received - (a.issued + a.received));
   }, [filteredTransactions]);
+
+  // Item-wise Summary
+  const itemSummary = useMemo(() => {
+    const itemMap: Record<string, {
+      name: string;
+      unit: string;
+      totalIssued: number;
+      totalReceived: number;
+      issueCount: number;
+      receiveCount: number;
+      locations: Set<string>;
+      persons: Set<string>;
+      dateBreakdown: Record<string, { issued: number; received: number; transactions: { type: string; quantity: number; location: string; personName: string; notes?: string }[] }>;
+    }> = {};
+
+    filteredTransactions.forEach(t => {
+      if (!itemMap[t.itemName]) {
+        itemMap[t.itemName] = {
+          name: t.itemName,
+          unit: t.unit || 'pcs',
+          totalIssued: 0,
+          totalReceived: 0,
+          issueCount: 0,
+          receiveCount: 0,
+          locations: new Set(),
+          persons: new Set(),
+          dateBreakdown: {}
+        };
+      }
+
+      const item = itemMap[t.itemName];
+      const dateKey = new Date(t.date).toLocaleDateString('en-IN');
+
+      if (t.type === TransactionType.ISSUE) {
+        item.totalIssued += t.quantity;
+        item.issueCount++;
+      } else {
+        item.totalReceived += t.quantity;
+        item.receiveCount++;
+      }
+
+      item.locations.add(t.location);
+      item.persons.add(t.personName);
+
+      if (!item.dateBreakdown[dateKey]) {
+        item.dateBreakdown[dateKey] = { issued: 0, received: 0, transactions: [] };
+      }
+      if (t.type === TransactionType.ISSUE) {
+        item.dateBreakdown[dateKey].issued += t.quantity;
+      } else {
+        item.dateBreakdown[dateKey].received += t.quantity;
+      }
+      item.dateBreakdown[dateKey].transactions.push({
+        type: t.type,
+        quantity: t.quantity,
+        location: t.location,
+        personName: t.personName,
+        notes: t.notes
+      });
+    });
+
+    let items = Object.values(itemMap).sort((a, b) => (b.totalIssued + b.totalReceived) - (a.totalIssued + a.totalReceived));
+
+    if (itemSearch) {
+      items = items.filter(i => i.name.toLowerCase().includes(itemSearch.toLowerCase()));
+    }
+
+    return items;
+  }, [filteredTransactions, itemSearch]);
 
   // Get unique locations from transactions
   const allLocations = useMemo(() => {
@@ -423,6 +494,9 @@ const Reports: React.FC<Props> = ({ transactions, currentUser }) => {
                 <button onClick={() => setActiveView('transactions')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeView === 'transactions' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                   <FileText size={14} className="inline mr-1.5" />Transactions
                 </button>
+                <button onClick={() => setActiveView('itemwise')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeView === 'itemwise' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                  <Package size={14} className="inline mr-1.5" />Item-wise
+                </button>
                 <button onClick={() => setActiveView('floorwise')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeView === 'floorwise' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                   <Building2 size={14} className="inline mr-1.5" />Floor-wise
                 </button>
@@ -535,6 +609,129 @@ const Reports: React.FC<Props> = ({ transactions, currentUser }) => {
               <span className="text-xs text-gray-500">{filteredTransactions.length} records</span>
             </div>
           </>
+        )}
+
+        {/* Item-wise View */}
+        {activeView === 'itemwise' && (
+          <div className="p-4 space-y-3">
+            {/* Item Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
+              <input
+                type="text"
+                placeholder="Search items..."
+                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:border-primary-500 focus:outline-none"
+                value={itemSearch}
+                onChange={(e) => setItemSearch(e.target.value)}
+              />
+            </div>
+
+            {/* Item Cards */}
+            {itemSummary.length > 0 ? itemSummary.map((item) => (
+              <div key={item.name} className="border border-gray-200 rounded-xl overflow-hidden">
+                {/* Item Header */}
+                <button
+                  className="w-full bg-gradient-to-r from-slate-50 to-gray-50 px-4 py-3 flex items-center justify-between hover:from-slate-100 hover:to-gray-100 transition-colors"
+                  onClick={() => setExpandedItem(expandedItem === item.name ? null : item.name)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="bg-indigo-100 p-2 rounded-lg">
+                      <Package size={18} className="text-indigo-600" />
+                    </div>
+                    <div className="text-left">
+                      <h3 className="font-bold text-gray-900">{item.name}</h3>
+                      <p className="text-xs text-gray-500">{item.locations.size} location(s) &middot; {item.persons.size} person(s)</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-700 rounded-lg text-xs font-semibold">
+                      <ArrowUpRight size={12} /> {item.totalIssued} {item.unit}
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-700 rounded-lg text-xs font-semibold">
+                      <ArrowDownLeft size={12} /> {item.totalReceived} {item.unit}
+                    </span>
+                    {expandedItem === item.name ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+                  </div>
+                </button>
+
+                {/* Expanded: Date-wise breakdown */}
+                {expandedItem === item.name && (
+                  <div>
+                    {/* Totals Bar */}
+                    <div className="px-4 py-2.5 bg-indigo-50 border-y border-indigo-100 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-indigo-700">
+                        Total Issued: <span className="text-amber-600">{item.totalIssued} {item.unit}</span> ({item.issueCount} txn)
+                        &nbsp;&middot;&nbsp;
+                        Total Received: <span className="text-green-600">{item.totalReceived} {item.unit}</span> ({item.receiveCount} txn)
+                      </span>
+                      <span className="text-xs font-medium text-gray-500">
+                        Net: <span className={item.totalReceived - item.totalIssued >= 0 ? 'text-green-600' : 'text-red-600'}>
+                          {item.totalReceived - item.totalIssued >= 0 ? '+' : ''}{item.totalReceived - item.totalIssued} {item.unit}
+                        </span>
+                      </span>
+                    </div>
+
+                    {/* Date-wise Table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+                          <tr>
+                            <th className="px-4 py-2.5 text-left font-semibold">Date</th>
+                            <th className="px-4 py-2.5 text-left font-semibold">Issued</th>
+                            <th className="px-4 py-2.5 text-left font-semibold">Received</th>
+                            <th className="px-4 py-2.5 text-left font-semibold">Location</th>
+                            <th className="px-4 py-2.5 text-left font-semibold">Person</th>
+                            <th className="px-4 py-2.5 text-left font-semibold">Notes</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {Object.entries(item.dateBreakdown)
+                            .sort(([a], [b]) => {
+                              const parseDate = (d: string) => { const p = d.split('/'); return new Date(Number(p[2]), Number(p[1]) - 1, Number(p[0])); };
+                              return parseDate(b).getTime() - parseDate(a).getTime();
+                            })
+                            .map(([date, data]) => (
+                            data.transactions.map((txn, idx) => (
+                              <tr key={`${date}-${idx}`} className="hover:bg-gray-50">
+                                {idx === 0 && (
+                                  <td className="px-4 py-2 font-medium text-gray-700" rowSpan={data.transactions.length}>
+                                    {date}
+                                  </td>
+                                )}
+                                <td className="px-4 py-2">
+                                  {txn.type === TransactionType.ISSUE ? (
+                                    <span className="text-amber-600 font-semibold">{txn.quantity} {item.unit}</span>
+                                  ) : <span className="text-gray-300">-</span>}
+                                </td>
+                                <td className="px-4 py-2">
+                                  {txn.type === TransactionType.RECEIVE ? (
+                                    <span className="text-green-600 font-semibold">{txn.quantity} {item.unit}</span>
+                                  ) : <span className="text-gray-300">-</span>}
+                                </td>
+                                <td className="px-4 py-2 text-gray-600 text-xs">{txn.location}</td>
+                                <td className="px-4 py-2 text-gray-600 text-xs">{txn.personName}</td>
+                                <td className="px-4 py-2 text-gray-400 text-xs">{txn.notes || '-'}</td>
+                              </tr>
+                            ))
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )) : (
+              <div className="text-center py-10 text-gray-400">
+                <Package size={40} className="mx-auto mb-3 opacity-30" />
+                <p className="font-medium">No items found</p>
+                <p className="text-sm mt-1">Adjust filters or search to see results</p>
+              </div>
+            )}
+
+            <div className="text-right">
+              <span className="text-xs text-gray-400 flex items-center justify-end gap-1"><User size={12} /> Report by: {userName}</span>
+            </div>
+          </div>
         )}
 
         {/* Floor-wise View */}
